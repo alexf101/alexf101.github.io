@@ -1,0 +1,82 @@
+<html>
+    <head>
+        <style>
+            body {
+                background-color: white;
+            }
+
+            table {
+                color: black;
+                text-align: left;
+            }
+            .spacer {
+                padding-left: 40px;
+            }
+        </style>
+    </head>
+    <body>
+        <table>
+            <tr>
+                <th>Independent variable</th>
+                <th>Type of change</th>
+                <th class="spacer"></th>
+                <th>Dependent variable</th>
+                <th>Type of change</th>
+            </tr>
+            <tr>
+                <td>
+                    <input
+                        name="independent-variable"
+                        type="text"
+                        value="fertilizer"
+                        oninput="updateResult()"
+                    />
+                </td>
+                <td>
+                    <select name="independent-change" oninput="updateResult()">
+                        <option value="increased">increased</option>
+                        <option value="decreased">decreased</option>
+                    </select>
+                </td>
+                <td class="spacer"></td>
+                <td>
+                    <input
+                        name="dependent-variable"
+                        type="text"
+                        value="height of the plant"
+                        oninput="updateResult()"
+                    />
+                </td>
+                <td>
+                    <select name="dependent-change" oninput="updateResult()">
+                        <option value="increase">increase</option>
+                        <option value="decrease">decrease</option>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <div id="result" />
+        <script type="text/javascript">
+            function updateResult() {
+                // Collect the inputs, putting them together with the joining words.
+                const result =
+                    [
+                        "If the",
+                        document.getElementsByName("independent-variable")[0]
+                            .value,
+                        "is",
+                        document.getElementsByName("independent-change")[0]
+                            .value,
+                        "then the",
+                        document.getElementsByName("dependent-variable")[0]
+                            .value,
+                        " will ",
+                        document.getElementsByName("dependent-change")[0].value,
+                    ].join(" ") + ".";
+                // Update the result text to be the sentence we made.
+                document.getElementById("result").textContent = result;
+            }
+            updateResult();
+        </script>
+    </body>
+</html>
