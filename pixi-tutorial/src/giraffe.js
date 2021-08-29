@@ -22,6 +22,7 @@ export class Giraffe {
     constructor(stage, gameTime) {
         this.stage = stage;
         this.neckLength = 16;
+        this._bornAt = gameTime;
         this.resetEatClock(gameTime);
         this._nextDirectionChangeTime = 0;
         this._applesConsumed = 0;
@@ -40,6 +41,20 @@ export class Giraffe {
         this.body.addChild(this.legs);
         this.body.pivot.set(0, 16);
         this.body.scale.set(1, 1);
+    }
+    setParent(giraffe) {
+        this._parent = giraffe;
+    }
+    eachAncestor(callback) {
+        callback(this);
+        if (this._parent) {
+            this._parent.eachAncestor(callback);
+        }
+    }
+    countAncestors() {
+        let count = 0;
+        this.eachAncestor((g) => (count += 1));
+        return count;
     }
     onEat(gameTime) {
         this.resetEatClock(gameTime);
@@ -68,16 +83,19 @@ export class Giraffe {
             throw new Error("Invalid direction");
         }
         this._direction = direction;
+        this.reposition();
     }
     resetChangeDirectionClock() {
         this._nextDirectionChangeTime += 1000 * (2 + Math.random() * 3);
     }
     resetEatClock(gameTime) {
+        this._lastAteAt = gameTime;
         if (this._starvationTime === undefined) {
             this._starvationTime = 0;
         }
-        this._starvationTime = gameTime + 5000 + 5000 * Math.random();
-        this._sicklyTime = this._starvationTime * (2 / 3);
+        const timeTillStarved = 5000 + 5000 * Math.random();
+        this._starvationTime = gameTime + timeTillStarved;
+        this._sicklyTime = gameTime + timeTillStarved * (2 / 3);
     }
     getStarvationTime() {
         return this._starvationTime;

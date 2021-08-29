@@ -3,7 +3,13 @@ import { loadAllResources, makeSpriteFromLoadedResource } from "./pixi.js";
 import { Tree } from "./tree.js";
 import { Apple } from "./apple.js";
 import { getResources } from "./register.js";
-import { clamp, gameTimeToMilliseconds, hitTestRectangle } from "./util.js";
+import {
+    clamp,
+    gameTimeToMilliseconds,
+    hitTestRectangle,
+    shallowNaNWatch,
+} from "./util.js";
+import { makeButton } from "./button.js";
 
 //Create a Pixi Application
 export const App = new PIXI.Application({
@@ -16,20 +22,26 @@ await loadAllResources(...getResources());
 
 class Game {
     constructor() {
+        this.playScene = new PIXI.Container();
         this.apples = new Map();
         this.giraffes = [];
         this.trees = [];
+        this.gameTime = 0;
+        this.gameSpeedMultipler = 1;
         this.makeGiraffes();
         this.makeTrees();
         this.makeApples();
         this.makeGreatTree();
-        this.gameTime = 0;
-        this.gameSpeedMultipler = 1;
+        App.stage.addChild(this.playScene);
+    }
+    start() {
         this.ticker = App.ticker.add(this.tick.bind(this));
     }
     makeGiraffes() {
         for (let i = 0; i < 10; i++) {
-            const giraffe = new Giraffe(App.stage, this.gameTime);
+            const giraffe = shallowNaNWatch(
+                new Giraffe(this.playScene, this.gameTime)
+            );
             this.giraffes.push(giraffe);
             giraffe.addAtPos(
                 Math.random() * (App.view.width - giraffe.getBodyWidth()),
@@ -39,7 +51,7 @@ class Game {
     }
     makeTrees() {
         for (let i = 0; i < 6; i++) {
-            const tree = new Tree(App.stage);
+            const tree = shallowNaNWatch(new Tree(this.playScene));
             tree.makeDraggable();
             this.trees.push(tree);
             tree.addAtPos(
@@ -49,8 +61,11 @@ class Game {
         }
     }
     makeGreatTree() {
-        const tree = new Tree(App.stage);
-        tree.onAppleEatenHook = () => (this.win = true);
+        const tree = new Tree(this.playScene);
+        tree.onAppleEatenHook = (apple, giraffe) => {
+            this.win = true;
+            this.winningGiraffe = giraffe;
+        };
         tree.body.scale.set(6, 6);
         tree.trunkLength = 50;
         this.trees.push(tree);
@@ -71,7 +86,7 @@ class Game {
     }
     addAppleToTree(tree) {
         // Randomly distribute the apples in the inner regions of the canopy, not right at the edges - it looks better.
-        const apple = new Apple(App.stage);
+        const apple = new Apple(this.playScene);
         this.apples.set(apple, apple);
         tree.addApple(apple);
     }
@@ -79,27 +94,17 @@ class Game {
         frames = rawFrames * this.gameSpeedMultipler;
         this.gameTime += gameTimeToMilliseconds(frames);
         try {
-            document.getElementById("fps-meter").textContent =
-                "FPS: " + Math.round(rawFrames * 60);
-            document.getElementById("game-time").textContent =
-                "Game time: " + Math.round(this.gameTime);
-            document.getElementById("giraffe-debug").textContent =
-                "Giraffes: " +
-                JSON.stringify(
-                    this.giraffes.map(
-                        (g) =>
-                            `Starves at ${Math.round(
-                                g.getStarvationTime()
-                            )}. Apples eaten: ${g._applesConsumed}`
-                    ),
-                    null,
-                    2
-                );
+            showDebugOutput(this, rawFrames);
         } catch (err) {
             console.log(err);
         }
         if (this.win) {
-            let text = new PIXI.Text("Congratulations! You win! :)", {
+            if (this.playScene.visible) {
+                this.showScore();
+            }
+            // this.ticker.stop();
+        } else if (this.giraffes.filter((g) => !g.dead).length === 0) {
+            let text = new PIXI.Text("All the giraffes died! :(", {
                 fontFamily: "Arial",
                 fontSize: 24,
                 fill: 0xffff10,
@@ -107,9 +112,105 @@ class Game {
             });
             text.x = (App.view.width - text.width) / 2;
             text.y = text.height;
-            App.stage.addChild(text);
-            this.ticker.stop();
+            this.playScene.addChild(text);
+            // this.ticker.stop();
+        } else {
+            this.play();
         }
+    }
+    showScore() {
+        this.playScene.visible = false;
+        this.finalScore = new PIXI.Container();
+        this.highScoreContainer = new PIXI.Container();
+        this.familyTreeContainer = new PIXI.Container();
+        this.familyTreeContainer.visible = false;
+        const victoryMessage = new PIXI.Text("Congratulations! You win! :)", {
+            fontFamily: "Arial",
+            fontSize: 24,
+            fill: 0xffff10,
+            align: "center",
+            fontWeight: "bold",
+        });
+        victoryMessage.x = (App.view.width - victoryMessage.width) / 2;
+        victoryMessage.y = victoryMessage.height;
+        this.finalScore.addChild(victoryMessage);
+        this.highScoreContainer.addChild(this.winningGiraffe.body);
+        // Show some info about the winning giraffe
+        const linesShownSoFar = [];
+        const infoText = (msgText) => {
+            const msg = new PIXI.Text(msgText, {
+                fontFamily: "Arial",
+                fontSize: 18,
+                fill: 0x87cefa,
+                align: "left",
+                fontWeight: "bold",
+            });
+            msg.resolution = 2;
+            msg.x = App.view.width / 3;
+            msg.y =
+                3 * victoryMessage.height + linesShownSoFar.length * msg.height;
+            this.highScoreContainer.addChild(msg);
+            linesShownSoFar.push(msg);
+        };
+        infoText(
+            `Total apples eaten: ${this.giraffes.reduce((soFar, g) => {
+                if (typeof g._applesConsumed === "number") {
+                    return soFar + g._applesConsumed;
+                } else {
+                    return soFar;
+                }
+            }, 0)}`
+        );
+        infoText("");
+        infoText("Your winning Giraffe was:");
+        infoText("");
+        infoText(
+            `  • born at ${roundTo(
+                this.winningGiraffe._bornAt / 1000,
+                1
+            )} seconds`
+        );
+        const ancestorCount = this.winningGiraffe.countAncestors();
+        infoText(`  • the child of ${ancestorCount} generations`);
+        infoText(
+            `  • ate the Great Apple at ${roundTo(
+                this.winningGiraffe._lastAteAt / 1000,
+                1
+            )} seconds`
+        );
+        const button = makeButton("Show family tree", () => {
+            this.highScoreContainer.visible = false;
+            this.familyTreeContainer.visible = true;
+        });
+        button.x = App.view.width / 3 + 40;
+        button.y = linesShownSoFar.slice(-1)[0].y + 80;
+        const backButton = makeButton("Show info again", () => {
+            this.highScoreContainer.visible = true;
+            this.familyTreeContainer.visible = false;
+        });
+        backButton.x = 150;
+        backButton.y = 68;
+        // Show all the ancestors in order of their generation.
+        const gapBetweenGiraffes = (App.view.width - 96) / ancestorCount;
+        let nextPos = 48;
+        this.winningGiraffe.eachAncestor((ancestor) => {
+            console.log("nextPos: ", nextPos); // XX
+            ancestor.x = nextPos;
+            ancestor.setDirection(1);
+            nextPos += gapBetweenGiraffes;
+            this.familyTreeContainer.addChild(ancestor.body);
+        });
+        // Show the winning giraffe
+        this.winningGiraffe.x = 48;
+        this.winningGiraffe.setDirection(1);
+        this.finalScore.addChild(this.winningGiraffe.body);
+        this.familyTreeContainer.addChild(backButton);
+        this.highScoreContainer.addChild(button);
+        this.finalScore.addChild(this.highScoreContainer);
+        this.finalScore.addChild(this.familyTreeContainer);
+        App.stage.addChild(this.finalScore);
+    }
+    play() {
         // Apples spawn on each tree about once per second
         this.trees.forEach((tree) => {
             if (tree.getNextAppleTime() < this.gameTime) {
@@ -129,16 +230,17 @@ class Game {
                 setTimeout(() => {
                     for (let i = 0; i < 2; i++) {
                         const giraffeChild = new Giraffe(
-                            App.stage,
+                            this.playScene,
                             this.gameTime
                         );
                         const plusOrMinusOne = 2 * i - 1;
                         giraffeChild.neckLength =
                             giraffe.neckLength + 40 * (Math.random() - 0.5);
                         giraffeChild.addAtPos(
-                            giraffe.x + plusOrMinusOne * 10,
+                            giraffe.x - plusOrMinusOne * 10,
                             giraffe.y
                         );
+                        giraffeChild.setParent(giraffe);
                         giraffe.setDirection(plusOrMinusOne);
                         this.giraffes.push(giraffeChild);
                     }
@@ -231,7 +333,7 @@ class Game {
                         ) {
                             if (!giraffe._eatenThisTick) {
                                 apple.onEaten();
-                                tree.onEaten(apple);
+                                tree.onEaten(apple, giraffe);
                                 giraffe.onEat(this.gameTime);
                                 this.apples.delete(apple);
                             }
@@ -247,9 +349,35 @@ class Game {
         }
     }
 }
-const game = new Game();
+export const game = shallowNaNWatch(new Game());
 window.DBG_game = game;
 
+function showDebugOutput(game, rawFrames) {
+    document.getElementById("fps-meter").textContent =
+        "FPS: " + Math.round(rawFrames * 60);
+    document.getElementById("game-time").textContent =
+        "Game time: " + Math.round(game.gameTime);
+    document.getElementById("giraffe-debug").textContent =
+        "Giraffes: " +
+        JSON.stringify(
+            game.giraffes.map(
+                (g) =>
+                    `Born at ${g._bornAt}. Last ate at ${Math.round(
+                        g._lastAteAt
+                    )}. Hungry at ${Math.round(
+                        g.getSicklyTime()
+                    )}. Starves at ${Math.round(
+                        g.getStarvationTime()
+                    )}. Apples eaten: ${g._applesConsumed}`
+            ),
+            null,
+            2
+        );
+}
+function roundTo(t, precision) {
+    let factor = 10 ** precision;
+    return Math.round(t * factor) / factor;
+}
 const e = React.createElement;
 export function Controls() {
     return e("div", {}, [
